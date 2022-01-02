@@ -1,0 +1,123 @@
+---
+title: "Trabalhando com dados espaciais com R"
+author: "Fellipe Mira Chaves"
+date: "01/01/2022"
+output: html_document
+
+categories:
+  - dataviz
+  - maps
+tags:
+  - dataviz
+  - maps
+  - R
+  - tmap
+keywords:
+  - R
+  - tmap
+  - dataviz
+  - covid19
+---
+
+
+## Base de dados Utilizada
+
+A principio foram utilizados dados disponiveis no repositorio pertencente a 
+Wesley Cota <https://github.com/wcota/covid19br> e Rami Krispin 
+<https://github.com/RamiKrispin/covid19sf>. Estes pacotes forncem uma base de 
+dados sobre casos de covid no Brasil e no mundo.
+
+# Requisitos
+
+Serão necessarios os eguintes pacotes:
+```{r}
+library(tidyverse)
+library(geobr)
+library(tmap)
+
+```
+
+Eles serão necessários para ler, obter, tratar e juntar bases de dados tabulares
+e dados georreferenciados
+
+# Realizando o download dos dados
+
+```{r cars}
+getwd()
+
+setwd("C:/Users/Fellipe/Desktop/git/fellipe.mira.github.io/")
+
+url <- "https://raw.githubusercontent.com/wcota/covid19br/master/cases-brazil-states.csv"
+
+dados <- readr::read_csv(url)
+```
+
+# Analisando as estruturas dos dados
+
+Analisando as estruturas dos dados disponiveis no github
+```{r}
+glimpse(dados)
+```
+
+Como nosso objetivo é trabalhar com os estados devemos transformar a variavel 
+"state" para factor
+
+```{r}
+dados$state <- as.factor(dados$state)
+```
+
+# Preparando os dados:
+
+seleceionaremos as colunas state e deaths, agruparemos por estado a partir da 
+soma do numero de dados
+```{r}
+a <- dados %>%
+  select(state, deaths) %>%
+  group_by(state) %>%
+  summarise(total_estado = sum(deaths))
+```
+
+```{r, echo=FALSE}
+kableExtra::kbl(a) %>%
+kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+```
+## Dados georreferenciados
+
+Até agora trabalhamos apenas com dados tabulares, mas com o auxilio do pacote 
+[geobr](https://cran.r-project.org/web/packages/geobr/vignettes/intro_to_geobr.html) 
+faremos o download de dados vetoriais dos estados brasileiros.
+```{r}
+states <- read_state(year = 2019)
+glimpse(states)
+```
+
+Conhecendo os dados podemos realizar o join das duas bases de dados
+
+```{r}
+dados_com_geom <- right_join(x = a,
+                             y = states,
+                             by= c("state" = "abbrev_state"))
+```
+
+Agora iremos avaliar como nossa base de dados está estruturada
+
+```{r}
+dados_com_geom %>% glimpse()
+head(dados_com_geom)
+```
+# Plotando os dados com o tmap package
+
+primeiramente iremos transformar os dados que foram unidos para classe sf (simple feature) o qual é util para transformar dados tabulares em dados "spatio-temporal" (por este motivo as funções começam com st_)
+
+```{r}
+
+dados_com_geom <- sf::st_as_sf(as.data.frame(dados_com_geom))
+
+tmap_mode(mode = 'view')
+tm_shape(dados_com_geom)+
+  tm_fill('total_estado',
+          palette = 'Blues')+
+  tm_shape(dados_com_geom)+
+  tm_borders(col = 'gray')
+```
+
