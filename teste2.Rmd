@@ -1,0 +1,182 @@
+---
+title: "Mapeando o Microclima de Guaratinguetá-SP"
+author: "Fellipe Mira Chaves"
+date: "02/01/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Mapeamento da Probabilidade de Cicroclima na cidade de Guaratinguetá-SP
+## Técnias utilizadas:
+  * Regressão logistica
+  * NDVI
+  * Classificação Supervisionada
+  * Modelo Digital de Elevação e Modelo Digital de Terreno
+  * Limiar de Otsu
+  * Landsat 8 TIRS/OLI
+  
+O resultado final é a distribuição da probabilidade de ocorrer termorregulação do clima pela vegetação local.
+
+## 
+```{r, echo=FALSE,message=FALSE}
+setwd("E:/")
+
+library(raster)
+library(tmap)
+
+```
+```{r,echo=FALSE, message=FALSE}
+
+setwd("E:/")
+
+guara.shp <- rgdal::readOGR("2016/shp/shp_reprojetado/guara_shp_rep.shp")
+
+bairros <-  rgdal::readOGR("bairros/bairros_novo.shp")
+
+
+raster_2020 <- stack("2020_novo/LC08_L1TP_218076_20200812_20200822_01_T1/recorte_BB1_pTOA.tif",
+                    "2020_novo/LC08_L1TP_218076_20200812_20200822_01_T1/recorte_BB2_pTOA.tif",
+                    "2020_novo/LC08_L1TP_218076_20200812_20200822_01_T1/recorte_BB3_pTOA.tif",
+                    "2020_novo/LC08_L1TP_218076_20200812_20200822_01_T1/recorte_BB4_pTOA.tif",
+                    "2020_novo/LC08_L1TP_218076_20200812_20200822_01_T1/recorte_BB5_pTOA.tif",
+                    "2020_novo/LC08_L1TP_218076_20200812_20200822_01_T1/recorte_BB6_pTOA.tif",
+                    '2020_novo/LC08_L1TP_218076_20200812_20200822_01_T1/recorte_BB7_pTOA.tif',
+                    "2020_novo/LC08_L1TP_218076_20200812_20200822_01_T1/recorte_BB10_T.tif",
+                    "2020_novo/LC08_L1TP_218076_20200812_20200822_01_T1/binario_limiar_b10.tif",
+                    "mapbiomas_2020.tif")
+
+names(raster_2020) <- c(paste0("B",c(1:7,10)),"resposta","clas")
+
+raster_2020$NDVI <- (raster_2020$B5 - raster_2020$B4)/(raster_2020$B5 + raster_2020$B4)
+
+raster_2016 <- stack("/2016/recorte_bruto/recorte_B1_pTOA.tif",
+                    "/2016/recorte_bruto/recorte_B2_pTOA.tif",
+                    "/2016/recorte_bruto/recorte_B3_pTOA.tif",
+                    "/2016/recorte_bruto/recorte_B4_pTOA.tif",
+                    "/2016/recorte_bruto/recorte_B5_pTOA.tif",
+                    "/2016/recorte_bruto/recorte_B6_pTOA.tif",
+                    "/2016/recorte_bruto/recorte_B7_pTOA.tif",
+                    "/2016/recorte_bruto/recorte_B10_T.tif",
+                    "/2016/recorte_bruto/binario_limiar_b10.tif",
+                    "/2016/recorte_bruto/NDVI.tif",
+                    "mapbiomas_2016.tif")
+
+names(raster_2016) <- c(paste0("B",c(1:7,10)),"resposta","NDVI","clas")
+
+
+#raster_2020$clas <- reclassify(raster_2020$clas,rcl = mat.recl)
+#raster_2020$clas <- crop(raster_2020$clas, guara.shp)
+#raster_2020$clas <- mask(raster_2020$clas, guara.shp)
+
+mat.recl <- matrix(c(1,10,1,
+                     10,15,2,
+                     15,30,3,
+                     30,35,4,
+                     35,46,5),
+                   ncol = 3, 
+                   byrow = T)
+
+raster_2016$clas <- reclassify(raster_2016$clas,rcl = mat.recl)
+raster_2016$clas <- crop(raster_2016$clas, guara.shp)
+raster_2016$clas <- mask(raster_2016$clas,guara.shp)
+
+raster_2020$clas <- reclassify(raster_2020$clas,rcl = mat.recl)
+raster_2020$clas <- crop(raster_2020$clas, guara.shp)
+raster_2020$clas <- mask(raster_2020$clas, guara.shp)
+
+
+raster_2016$clas <- as.integer(raster_2016$clas) 
+
+raster_2020$clas <- as.integer(raster_2020$clas)
+
+
+data_2016 <- data.frame(na.omit(getValues(raster_2016)))
+data_2020 <- data.frame(na.omit(getValues(raster_2020)))
+data_2020$clas <- as.integer(data_2020$clas)
+bairro_2016 <- crop(raster_2016, bairros)
+bairro_2016 <- mask(bairro_2016, bairros)
+
+bairro_2020 <- crop(raster_2020, bairros)
+bairro_2020 <- mask(bairro_2020,bairros)
+
+data_bairro_2016 <- data.frame(na.omit(getValues(bairro_2016)))
+data_bairro_2020 <- data.frame(na.omit(getValues(bairro_2020)))
+
+df <- as.data.frame(data_bairro_2016$NDVI)
+df$NDVI_2020 <- data.frame(data_bairro_2020$NDVI)
+df$temp_2016 <- data.frame(data_bairro_2016$B10)
+df$temp_2020 <- data.frame(data_bairro_2020$B10)
+dfNDVI <- cbind(data_bairro_2016$NDVI,
+            data_bairro_2020$NDVI)
+
+M_2016 <- glm(resposta~NDVI,
+              data = data_2016,
+              family =  binomial(link="logit"))
+
+raster_2016$prob_temp <- predict(raster_2016,
+                             model = M_2016,
+                             type = "response")
+M_2020 <- glm(resposta~NDVI,
+              data = data_2020,
+              family =  binomial(link="logit"))
+
+raster_2020$prob_temp <- predict(raster_2020,
+                                 model = M_2020,
+                                 type = "response")
+
+################################################################################
+
+```
+```{r,echo=FALSE, message=FALSE}
+tmap_mode("view")
+
+map_2016 <- tm_shape(raster_2016$clas, 
+         name = "Classificação: RandomForests")+
+  tm_raster(title = "Classes",
+            style='pretty', 
+            palette = 'inferno')+
+  tm_shape(raster_2016$NDVI,
+           name = "NDVI")+
+  tm_raster(title = "NDVI",
+            style = "fisher")+
+  tm_shape(raster_2016$prob_temp,
+           name = "Temperatura")+
+  tm_raster(title = "Probabilidade [%]",
+            style = "fisher", 
+            palette = "inferno")+
+  tm_shape(bairros)+
+  tm_borders(col="gray")+
+  tm_text(text = "name",col = "gray")+
+  tm_layout(main.title = "Mapeamento das variaveis - 2016")
+
+map_2020 <- tm_shape(raster_2020$clas, 
+         name = "Classificação: RandomForests")+
+  tm_raster(title = "Classes",
+            style='pretty', 
+            palette = 'inferno')+
+  tm_shape(raster_2020$NDVI,
+           name = "NDVI")+
+  tm_raster(title = "NDVI",
+            style = "fisher")+
+  tm_shape(raster_2020$prob_temp,
+           name = "Temperatura")+
+  tm_raster(title = "Probabilidade [%]",
+            style = "fisher", 
+            palette = "inferno")+
+  tm_shape(bairros)+
+  tm_borders(col="gray")+
+  tm_text(text = "name",col = "gray")+
+  tm_layout(main.title = "Mapeamento das variaveis - 2020")
+
+tmap_arrange(map_2016, 
+          map_2020,
+          asp = 0,
+          ncol = 2,
+          sync = T,
+          widths = c(.25, 0.9))
+```
+
+
